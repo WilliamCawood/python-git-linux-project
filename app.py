@@ -53,8 +53,6 @@ strategy = st.selectbox("Strategy", ["Buy & Hold", "Moving Average"])
 if strategy == "Moving Average":
     st.slider("MA window", 5, 200, 20)
 
-st.info("UI scaffold ready. Data retrieval, strategies, metrics and charts will be added in the next commits.")
-
 
 
 st.subheader("Latest price")
@@ -75,4 +73,18 @@ close = data["Close"]
 latest_price = float(close.iloc[-1])
 st.metric(label=symbol, value=f"{latest_price:,.2f}")
 
-st.info("Live data retrieval connected. Strategies and charts will be added next.")
+st.subheader("Buy & Hold strategy")
+
+returns = close.pct_change()
+equity = (1 + returns).cumprod()
+
+price_norm = close / close.iloc[0]
+
+chart_df = pd.DataFrame(
+    {
+        "Price (normalized)": price_norm,
+        "Buy & Hold equity": equity,
+    }
+).dropna()
+
+st.line_chart(chart_df)
