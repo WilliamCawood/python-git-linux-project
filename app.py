@@ -1,4 +1,6 @@
 import streamlit as st
+import yfinance as yf
+import pandas as pd
 
 st.title("Project: Python, Git, Linux for Finance - Dashboard")
 
@@ -52,3 +54,25 @@ if strategy == "Moving Average":
     st.slider("MA window", 5, 200, 20)
 
 st.info("UI scaffold ready. Data retrieval, strategies, metrics and charts will be added in the next commits.")
+
+
+
+st.subheader("Latest price")
+data = yf.download(symbol,period=period,interval=interval,auto_adjust=True,progress=False)
+
+
+if isinstance(data.columns, pd.MultiIndex):
+    data.columns = data.columns.get_level_values(0)
+
+data = data.dropna()
+
+if data.empty or "Close" not in data.columns:
+    st.error("No data returned for this selection.")
+    st.stop()
+
+close = data["Close"]
+
+latest_price = float(close.iloc[-1])
+st.metric(label=symbol, value=f"{latest_price:,.2f}")
+
+st.info("Live data retrieval connected. Strategies and charts will be added next.")
