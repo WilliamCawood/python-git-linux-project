@@ -73,17 +73,26 @@ close = data["Close"]
 latest_price = float(close.iloc[-1])
 st.metric(label=symbol, value=f"{latest_price:,.2f}")
 
-st.subheader("Buy & Hold strategy")
-
 returns = close.pct_change()
-equity = (1 + returns).cumprod()
+
+if strategy == "Buy & Hold":
+    equity = (1 + returns).cumprod()
+    equity_name = "Buy & Hold equity"
+else:
+    ma = close.rolling(ma_window).mean()
+    signal = (close > ma).astype(int)       
+    strat_returns = signal.shift(1) * returns
+    equity = (1 + strat_returns).cumprod()
+    equity_name = f"MA({ma_window}) equity"
+
+st.subheader("Price and strategy equity curve")
 
 price_norm = close / close.iloc[0]
 
 chart_df = pd.DataFrame(
     {
         "Price (normalized)": price_norm,
-        "Buy & Hold equity": equity,
+        equity_name: equity,
     }
 ).dropna()
 
