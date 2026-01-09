@@ -182,6 +182,23 @@ def run_quant_b_module():
         key="qb_tickers"
     )
 
+    # --- 1. SÉLECTION DES POIDS (NOUVEAU) ---
+    st.subheader("Portfolio Allocation")
+    weights = {}
+    
+    if len(tickers) > 0:
+        cols = st.columns(len(tickers))
+        for i, ticker in enumerate(tickers):
+            # On crée un slider pour chaque ticker
+            weights[ticker] = cols[i].slider(f"{ticker} Weight", 0.0, 1.0, 1.0/len(tickers), key=f"w_{ticker}")
+    
+    # Vérification que la somme fait 1 (ou 100%)
+    total_weight = sum(weights.values())
+    if total_weight > 0:
+        st.caption(f"Total Allocation: {total_weight:.2%}")
+    else:
+        st.warning("Total allocation is 0. Please select weights.")
+
     if st.button("Analyze Portfolio", key="qb_run"):
         if len(tickers) < 3:
             st.error("Please select at least 3 assets.")
@@ -192,44 +209,82 @@ def run_quant_b_module():
 
         with st.spinner("Fetching data..."):
             try:
+                # Tentative de téléchargement
                 raw = yf.download(tickers, period="1y", interval="1d", progress=False)
 
+                # Extraction "Close" robuste
                 if isinstance(raw.columns, pd.MultiIndex):
-                    # Typical: first level is OHLCV (Close), second level tickers
                     if "Close" in raw.columns.get_level_values(0):
                         data = raw["Close"].copy()
                     else:
-                        # fallback attempt
                         data = raw.xs("Close", axis=1, level=1, drop_level=False)
                 else:
-                    # Unlikely when multiple tickers, but keep safe
                     if "Close" in raw.columns:
                         data = pd.DataFrame({"Close": raw["Close"]})
-
+                
+                # Vérification
                 if data is None or data.empty or data.isna().all().all():
-                    raise ValueError("Yahoo download returned empty data")
+                    raise ValueError("Empty data")
+                
+                # On ne garde que les tickers demandés (au cas où yfinance en renvoie trop)
+                valid_tickers = [t for t in tickers if t in data.columns]
+                if not valid_tickers:
+                     raise ValueError("No matching columns")
+                data = data[valid_tickers]
 
             except Exception:
                 using_mock = True
                 data = generate_mock_data(tickers)
 
         if using_mock:
-            st.warning("âš ï¸ Yahoo Finance unavailable â€” showing **simulated data** for demonstration.")
+            st.warning("⚠️ Yahoo Finance unavailable — showing **simulated data**.")
         else:
-            st.success("âœ… Data loaded successfully from Yahoo Finance.")
+            st.success("✅ Data loaded successfully.")
 
         data = data.dropna(how="any")
-        if data.empty:
-            st.error("No overlapping data available after cleaning.")
-            return
+        
+        # --- 2. CALCUL DU PORTEFEUILLE (NOUVEAU) ---
+        # Normalisation (Base 100)
+        normalized_assets = data / data.iloc[0] * 100
+        
+        # Calcul de la courbe du portefeuille pondéré
+        # Formule : Somme(Prix_Normalisé * Poids) / Somme(Poids)
+        portfolio_curve = pd.Series(0, index=normalized_assets.index)
+        
+        for ticker in tickers:
+            w = weights.get(ticker, 0)
+            portfolio_curve += normalized_assets[ticker] * w
+        
+        # Si la somme des poids n'est pas 1, on re-normalise
+        if total_weight > 0:
+            portfolio_curve = portfolio_curve / total_weight
+        
+        # On ajoute le portefeuille au graphique
+        chart_data = normalized_assets.copy()
+        chart_data["PORTFOLIO (Your Strategy)"] = portfolio_curve
 
-        st.subheader("Normalized Prices (Base 100)")
-        st.line_chart(data / data.iloc[0] * 100)
+        st.subheader("Portfolio Performance vs Individual Assets")
+        # On affiche le Portefeuille en premier ou en évidence
+        st.line_chart(chart_data)
 
+        # --- 3. METRIQUES DU PORTEFEUILLE ---
+        st.subheader("Portfolio Metrics")
+        # Rendement cumulé final
+        total_ret = (portfolio_curve.iloc[-1] / portfolio_curve.iloc[0]) - 1
+        # Volatilité du portefeuille (simplifiée sur les rendements journaliers)
+        port_daily_ret = portfolio_curve.pct_change().dropna()
+        volatility = port_daily_ret.std() * np.sqrt(252)
+        sharpe = (port_daily_ret.mean() / port_daily_ret.std()) * np.sqrt(252)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Portfolio Total Return", f"{total_ret:.2%}")
+        m2.metric("Portfolio Volatility", f"{volatility:.2%}")
+        m3.metric("Sharpe Ratio", f"{sharpe:.2f}")
+
+        # --- 4. MATRICE DE CORRÉLATION ---
         st.subheader("Correlation Matrix")
         returns = data.pct_change().dropna()
         corr = returns.corr()
-
         st.dataframe(corr.style.background_gradient(cmap="coolwarm").format("{:.2f}"))
 
 
